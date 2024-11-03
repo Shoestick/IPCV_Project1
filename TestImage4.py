@@ -1,5 +1,6 @@
 import cv2 as cv
 import numpy as np
+from operator import itemgetter
 #from matplotlib import pyplot as plt
 #import sys
 #import math
@@ -11,7 +12,7 @@ color = np.random.randint(0, 255, (500, 3))
 PreviousPoints = []
 
 #CHECK PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!CHECK PATH
-videoCapture = cv.VideoCapture('Project/InputVideoCOMP.mp4')
+videoCapture = cv.VideoCapture('InputVideoCOMP.mp4')
 if (videoCapture.isOpened()== False):
     print("Error opening video file")
 
@@ -148,9 +149,6 @@ while(videoCapture.isOpened()):
             l = lines[i][0]
             cv.line(hough_image, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
 
-
-    
-    
     #Values for filtering and grouping
     minLength = 10
     minRes = 1
@@ -379,6 +377,17 @@ while(videoCapture.isOpened()):
         
         PreviousPoints = CornerPoints
         
+    def mark_pts(im, pts, marker_color = (255, 50, 0), text_color = (0, 50, 255), marker_type = cv.MARKER_CROSS, text_sz = 2, marker_sz = 30):
+        for i, p in enumerate(pts):
+            cv.drawMarker(im, tuple(p), marker_color, marker_type, marker_sz, 3)
+            cv.putText(im, str(i), (p[0], p[1] - 10), cv.FONT_HERSHEY_COMPLEX, text_sz, text_color, 2)
+        return im
+
+    def rescale_frame(frame_input, percent=75):    
+        width = int(frame_input.shape[1] * percent / 100)    
+        height = int(frame_input.shape[0] * percent / 100)    
+        dim = (width, height)    
+        return cv.resize(frame_input, dim, interpolation=cv.INTER_AREA)
 
     
     #Print lines
@@ -387,27 +396,27 @@ while(videoCapture.isOpened()):
         for i in range(0, len(LineFiltered)):
             l = LineFiltered[i]
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
+    
+    AveragePoints.sort(key=itemgetter(1))
+
+    mark_pts(OrigImage, AveragePoints)
 
     #Print points
-    if AveragePoints is not None:
-        #print(AveragePoints)
-        for i in range(0, len(AveragePoints)):
-            p = AveragePoints[i]
-            OrigImage = cv.circle(OrigImage, (p[0], p[1]), 20, (255, 255, 255), -1)
+    # if AveragePoints is not None:
+    #     #print(AveragePoints)
+    #     for i in range(0, len(AveragePoints)):
+    #         p = AveragePoints[i]
+    #         OrigImage = cv.circle(OrigImage, (p[0], p[1]), 20, (255, 255, 255), -1)
 
-
-
-    cv.imshow("Source1", segmented_image)
-    cv.imshow("Source2", eroded_edges)
-    cv.imshow("Source3", hough_image)
-    cv.imshow("Source4", OrigImage)
-    cv.imshow("Source5", TestMask)
+    #cv.imshow("Source1", segmented_image)
+    #cv.imshow("Source2", eroded_edges)
+    #cv.imshow("Source3", hough_image)
+    cv.imshow("Source4", rescale_frame(OrigImage))
+    #cv.imshow("Source5", TestMask)
     #print("Frame")
 
     #output_frame = OrigImage
     #output.write(output_frame) 
-
-
 
     if cv.waitKey(16) & 0xFF == ord('q'):
         break
