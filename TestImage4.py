@@ -7,7 +7,7 @@ from operator import itemgetter
 
 
 setPoints = []
-setPoint = [0, 0]
+setPoint = [0, 0, 0, 0]
 setPoints.append(setPoint)
 
 goalLengths = []
@@ -426,21 +426,31 @@ while(videoCapture.isOpened()):
 
         goalLengths.append(math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3])))
 
-        newPoint = [LineGoal[markerPoint][0], LineGoal[markerPoint][1]]
+        newPoint = [LineGoal[markerPoint][0], LineGoal[markerPoint][1], LineGoal[markerPoint][2], LineGoal[markerPoint][3]]
         setPoints.append(newPoint)
         if len(setPoints) > 10:
             setPoints.pop(0)
             goalLengths.pop(0)
 
-        avgX = 0
-        avgY = 0
+        avgX_1 = 0
+        avgY_1 = 0
+        avgX_2 = 0
+        avgY_2 = 0
         avgLen = 0
         for i in range(0, len(setPoints)):
-            avgX += setPoints[i][0]
-            avgY += setPoints[i][1]
+            avgX_1 += setPoints[i][0]
+            avgY_1 += setPoints[i][1]
+            avgX_2 += setPoints[i][2]
+            avgY_2 += setPoints[i][3]
             avgLen += goalLengths[i]
 
-        setPoint = [int(avgX / len(setPoints)), int(avgY / len(setPoints))]
+        bottomGoalPoint = (int(avgX_1 / len(setPoints)), int(avgY_1 / len(setPoints)))
+        topGoalPoint = (int(avgX_2 / len(setPoints)), int(avgY_2 / len(setPoints)))
+
+        centroidX = (topGoalPoint[0] + bottomGoalPoint[0]) // 2
+        centroidY = (topGoalPoint[1] + bottomGoalPoint[1]) // 2
+
+        setPoint = (centroidX, centroidY)
         goalPostLength = avgLen / len(goalLengths)
         print(goalPostLength)
         cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
