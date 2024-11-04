@@ -6,7 +6,13 @@ from operator import itemgetter
 #import sys
 
 
+setPoints = []
+setPoint = [0, 0]
+setPoints.append(setPoint)
 
+goalLengths = []
+goalPostLength = 1
+goalLengths.append(goalPostLength)
 
 MIN_MATCH_COUNT = 10
 color = np.random.randint(0, 255, (500, 3))
@@ -410,16 +416,33 @@ while(videoCapture.isOpened()):
             l = LineFiltered[i]
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
-    setPoint = [0, 0]
-    goalPostLength = 1
+    
+    
     #draw marker on goal post set point
     if LineGoal:
         LineGoal.sort(key=itemgetter(1))
 
         markerPoint = 0
-        goalPostLength = math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3]))
 
-        setPoint = [LineGoal[markerPoint][0], LineGoal[markerPoint][1]]
+        goalLengths.append(math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3])))
+
+        newPoint = [LineGoal[markerPoint][0], LineGoal[markerPoint][1]]
+        setPoints.append(newPoint)
+        if len(setPoints) > 10:
+            setPoints.pop(0)
+            goalLengths.pop(0)
+
+        avgX = 0
+        avgY = 0
+        avgLen = 0
+        for i in range(0, len(setPoints)):
+            avgX += setPoints[i][0]
+            avgY += setPoints[i][1]
+            avgLen += goalLengths[i]
+
+        setPoint = [int(avgX / len(setPoints)), int(avgY / len(setPoints))]
+        goalPostLength = avgLen / len(goalLengths)
+        print(goalPostLength)
         cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
 
     # Create an empty list to hold the 3D points (original 2D point + distance)
@@ -450,7 +473,7 @@ while(videoCapture.isOpened()):
 
     # sort based on distance from set point
     averagePointsDistance.sort(key=itemgetter(3))
-    print(averagePointsDistance)
+    #print(averagePointsDistance)
 
     mark_pts(OrigImage, averagePointsDistance)
 
