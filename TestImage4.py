@@ -98,6 +98,13 @@ while(videoCapture.isOpened()):
 
     else: 
         break
+
+    lower_bound = np.array([200, 200, 200], dtype=np.uint8)
+    upper_bound = np.array([255, 255, 255], dtype=np.uint8)
+
+    # Create a mask where pixels within the range are white, others are black
+    TestImage = cv.inRange(TestImage, lower_bound, upper_bound)
+    TestImage = cv.cvtColor(TestImage, cv.COLOR_GRAY2BGR)
     
     #Contrast and brightness mask for input frame
     '''
@@ -118,19 +125,19 @@ while(videoCapture.isOpened()):
     '''
     
     # Step 1: Apply green color segmentation (JANNAT)
-    segmented_image = color_segmentation_green(TestImage)
+    #segmented_image = color_segmentation_green(TestImage)
 
     #TEST masking out the outside area
-    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (6, 3))
-    TestMask = cv.erode(segmented_image, kernel, iterations=15)
-    TestMask = cv.cvtColor(TestMask, cv.COLOR_BGR2GRAY)
-    empty, TestMask = cv.threshold(TestMask, 0, 255, cv.THRESH_BINARY)
-    TestMask = cv.dilate(TestMask, kernel, iterations=30)
-    TestMask = cv.cvtColor(TestMask, cv.COLOR_GRAY2BGR)
-    segmented_image = cv.bitwise_and(segmented_image, TestMask)
+    # kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (6, 3))
+    # TestMask = cv.erode(segmented_image, kernel, iterations=15)
+    # TestMask = cv.cvtColor(TestMask, cv.COLOR_BGR2GRAY)
+    # empty, TestMask = cv.threshold(TestMask, 0, 255, cv.THRESH_BINARY)
+    # TestMask = cv.dilate(TestMask, kernel, iterations=30)
+    # TestMask = cv.cvtColor(TestMask, cv.COLOR_GRAY2BGR)
+    # segmented_image = cv.bitwise_and(segmented_image, TestMask)
 
     # Step 2: Detect edges using Canny edge detection (JANNAT)
-    edges, gray_image = detect_edges(segmented_image)
+    edges, gray_image = detect_edges(TestImage)
 
     # Step 3: Morphological operations (JANNAT) customised
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
@@ -397,7 +404,13 @@ while(videoCapture.isOpened()):
             l = LineFiltered[i]
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
-    AveragePoints.sort(key=itemgetter(1))
+    #draw marker on goal post set point
+    if LineFiltered:
+        LineFiltered.sort(key=itemgetter(1))
+        print(LineFiltered)
+        cv.drawMarker(OrigImage, (LineFiltered[0][0], LineFiltered[0][1]), (255, 50, 0), cv.MARKER_CROSS, 30, 3)
+
+    AveragePoints.sort(key=itemgetter(0))
 
     mark_pts(OrigImage, AveragePoints)
 
