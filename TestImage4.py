@@ -416,70 +416,81 @@ while(videoCapture.isOpened()):
             l = LineFiltered[i]
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
+    def getGoalReference(LineGoal):
+        if LineGoal:
+            # sort based on y coord to pick correct marker point
+            LineGoal.sort(key=itemgetter(1))
+
+            markerPoint = 0
+
+            # update lists of previous points/lengths for use in averaging
+            setPoints.append(LineGoal[markerPoint])
+            goalLengths.append(math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3])))
+
+            # only keep track of last num of points/lengths
+            if len(setPoints) > 10:
+                setPoints.pop(0)
+                goalLengths.pop(0)
+
+            avgX_1 = 0
+            avgY_1 = 0
+            avgX_2 = 0
+            avgY_2 = 0
+            avgLen = 0
+            for i in range(0, len(setPoints)):
+                avgX_1 += setPoints[i][0]
+                avgY_1 += setPoints[i][1]
+                avgX_2 += setPoints[i][2]
+                avgY_2 += setPoints[i][3]
+                avgLen += goalLengths[i]
+
+            # get average of end points of crossbar to get centre
+            bottomGoalPoint = (int(avgX_1 / len(setPoints)), int(avgY_1 / len(setPoints)))
+            topGoalPoint = (int(avgX_2 / len(setPoints)), int(avgY_2 / len(setPoints)))
+
+            centreX = (topGoalPoint[0] + bottomGoalPoint[0]) // 2
+            centreY = (topGoalPoint[1] + bottomGoalPoint[1]) // 2
+
+            setPoint = (centreX, centreY)
+            goalPostLength = avgLen / len(goalLengths)
+            cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
+            return setPoint, goalPostLength
     
-    
-    #draw marker on goal post set point
-    if LineGoal:
-        LineGoal.sort(key=itemgetter(1))
+    # get stable point from pitch, center of crossbar, and length of crossbar
+    setPoint, goalPostLength = getGoalReference(LineGoal)
 
-        markerPoint = 0
+    # takes in array of points, dest 4D array, setPoint and goalPostLength
+    # calcs both distance from each point to setPoint and which 'octant'
+    # the point is taking the setPoint as the origin and adds to new array
+    def calcDistOrient(AveragePoints, averagePointsDistance, setPoint, goalPostLength):
+        # Iterate over each point in AveragePoints and calculate the distance
+        for l in AveragePoints:
+            # Calculate the distance from setPoint
+            dist = math.dist(setPoint, l)
+            relDist = dist // (goalPostLength / 2)
+            
+            # calculate angle between two points taking setpoint as origin
+            # equalise points compared to set point
+            tempY = l[1] - setPoint[1]
+            tempX = l[0] - setPoint[0]
+            
+            rads = math.atan2(tempY, tempX) / math.pi
+            degrees = math.degrees(math.atan2(tempY, tempX))
+            if degrees < 0:
+                degrees += 360
 
-        goalLengths.append(math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3])))
+            octant = 8 - ( degrees // 45 )
 
-        newPoint = [LineGoal[markerPoint][0], LineGoal[markerPoint][1], LineGoal[markerPoint][2], LineGoal[markerPoint][3]]
-        setPoints.append(newPoint)
-        if len(setPoints) > 10:
-            setPoints.pop(0)
-            goalLengths.pop(0)
+            # Concatenate the original point with the distance to form a new array with three elements
+            new_point = np.concatenate((l, [relDist, octant]))
+            
+            # Append the new point to the list
+            averagePointsDistance.append(new_point)
+        return averagePointsDistance
 
-        avgX_1 = 0
-        avgY_1 = 0
-        avgX_2 = 0
-        avgY_2 = 0
-        avgLen = 0
-        for i in range(0, len(setPoints)):
-            avgX_1 += setPoints[i][0]
-            avgY_1 += setPoints[i][1]
-            avgX_2 += setPoints[i][2]
-            avgY_2 += setPoints[i][3]
-            avgLen += goalLengths[i]
-
-        bottomGoalPoint = (int(avgX_1 / len(setPoints)), int(avgY_1 / len(setPoints)))
-        topGoalPoint = (int(avgX_2 / len(setPoints)), int(avgY_2 / len(setPoints)))
-
-        centroidX = (topGoalPoint[0] + bottomGoalPoint[0]) // 2
-        centroidY = (topGoalPoint[1] + bottomGoalPoint[1]) // 2
-
-        setPoint = (centroidX, centroidY)
-        goalPostLength = avgLen / len(goalLengths)
-        print(goalPostLength)
-        cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
-
-    # Create an empty list to hold the 3D points (original 2D point + distance)
+    # create an empty list to hold the 4D points (original 2D point + distance + octant)
     averagePointsDistance = []
-    # Iterate over each point in AveragePoints and calculate the distance
-    for l in AveragePoints:
-        # Calculate the distance from setPoint
-        dist = math.dist(setPoint, l)
-        relDist = dist // (goalPostLength / 2)
-        
-        # calculate angle between two points taking setpoint as origin
-        # equalise points compared to set point
-        tempY = l[1] - setPoint[1]
-        tempX = l[0] - setPoint[0]
-        
-        rads = math.atan2(tempY, tempX) / math.pi
-        degrees = math.degrees(math.atan2(tempY, tempX))
-        if degrees < 0:
-            degrees += 360
-
-        octant = 8 - ( degrees // 45 )
-
-        # Concatenate the original point with the distance to form a new array with three elements
-        new_point = np.concatenate((l, [relDist, octant]))
-        
-        # Append the new point to the list
-        averagePointsDistance.append(new_point)
+    calcDistOrient(AveragePoints, averagePointsDistance, setPoint, goalPostLength)
 
     # sort based on distance from set point
     averagePointsDistance.sort(key=itemgetter(3))
