@@ -393,7 +393,7 @@ while(videoCapture.isOpened()):
     def mark_pts(im, pts, marker_color = (255, 50, 0), text_color = (0, 50, 255), marker_type = cv.MARKER_CROSS, text_sz = 2, marker_sz = 30):
         for i, p in enumerate(pts):
             cv.drawMarker(im, (int(p[0]), int(p[1])), marker_color, marker_type, marker_sz, 3)
-            cv.putText(im, str(i), (int(p[0]), int(p[1] - 10)), cv.FONT_HERSHEY_COMPLEX, text_sz, text_color, 2)
+            cv.putText(im, (str(p[2]) + ", " + str(int(p[3]))), (int(p[0]), int(p[1] - 10)), cv.FONT_HERSHEY_COMPLEX, text_sz, text_color, 2)
         return im
 
     def rescale_frame(frame_input, percent=75):    
@@ -411,10 +411,15 @@ while(videoCapture.isOpened()):
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
     setPoint = [0, 0]
+    goalPostLength = 1
     #draw marker on goal post set point
     if LineGoal:
         LineGoal.sort(key=itemgetter(1))
-        setPoint = [LineGoal[0][0], LineGoal[0][1]]
+
+        markerPoint = 0
+        goalPostLength = math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3]))
+
+        setPoint = [LineGoal[markerPoint][0], LineGoal[markerPoint][1]]
         cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
 
     # Create an empty list to hold the 3D points (original 2D point + distance)
@@ -423,6 +428,7 @@ while(videoCapture.isOpened()):
     for l in AveragePoints:
         # Calculate the distance from setPoint
         dist = math.dist(setPoint, l)
+        relDist = dist // (goalPostLength / 2)
         
         # calculate angle between two points taking setpoint as origin
         # equalise points compared to set point
@@ -434,8 +440,10 @@ while(videoCapture.isOpened()):
         if degrees < 0:
             degrees += 360
 
+        octant = 8 - ( degrees // 45 )
+
         # Concatenate the original point with the distance to form a new array with three elements
-        new_point = np.concatenate((l, [dist, degrees]))
+        new_point = np.concatenate((l, [relDist, octant]))
         
         # Append the new point to the list
         averagePointsDistance.append(new_point)
