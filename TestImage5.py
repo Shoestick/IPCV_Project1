@@ -15,8 +15,16 @@ PreviousPoints2 = []
 PreviousPoints3 = []
 PreviousPoints4 = []
 
+setPoints = []
+setPoint = [0, 0, 0, 0]
+setPoints.append(setPoint)
+
+goalLengths = []
+goalPostLength = 1
+goalLengths.append(goalPostLength)
+
 #CHECK PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!CHECK PATH
-videoCapture = cv.VideoCapture('Project/InputVideoCOMP.mp4')
+videoCapture = cv.VideoCapture('InputVideoCOMP.mp4')
 if (videoCapture.isOpened()== False):
     print("Error opening video file")
 
@@ -405,10 +413,11 @@ def average_strong_corners(CornerPoints):
 
     return AveragePoints
 
+# Optional function to mark points on pitch and show relative distance and octant
 def mark_pts(im, pts, marker_color = (255, 50, 0), text_color = (0, 50, 255), marker_type = cv.MARKER_CROSS, text_sz = 2, marker_sz = 30):
     for i, p in enumerate(pts):
         cv.drawMarker(im, (int(p[0]), int(p[1])), marker_color, marker_type, marker_sz, 3)
-        cv.putText(im, str(int(p[3])), (int(p[0]), int(p[1] - 10)), cv.FONT_HERSHEY_COMPLEX, text_sz, text_color, 2)
+        cv.putText(im, (str(p[2]) + ", " + str(int(p[3]))), (int(p[0]), int(p[1] - 10)), cv.FONT_HERSHEY_COMPLEX, text_sz, text_color, 2)
     return im
 
 def rescale_frame(frame_input, percent=75):    
@@ -416,11 +425,76 @@ def rescale_frame(frame_input, percent=75):
     height = int(frame_input.shape[0] * percent / 100)    
     dim = (width, height)    
     return cv.resize(frame_input, dim, interpolation=cv.INTER_AREA)
-    
 
+# Get point at centre of crossbar and its length
+def get_goal_reference(LineGoal):
+        if LineGoal:
+            # sort based on y coord to pick correct marker point
+            LineGoal.sort(key=itemgetter(1))
 
+            markerPoint = 0
 
+            # update lists of previous points/lengths for use in averaging
+            setPoints.append(LineGoal[markerPoint])
+            goalLengths.append(math.dist((LineGoal[markerPoint][0], LineGoal[markerPoint][1]), (LineGoal[markerPoint][2], LineGoal[markerPoint][3])))
 
+            # only keep track of last num of points/lengths
+            if len(setPoints) > 10:
+                setPoints.pop(0)
+                goalLengths.pop(0)
+
+            avgX_1 = 0
+            avgY_1 = 0
+            avgX_2 = 0
+            avgY_2 = 0
+            avgLen = 0
+            for i in range(0, len(setPoints)):
+                avgX_1 += setPoints[i][0]
+                avgY_1 += setPoints[i][1]
+                avgX_2 += setPoints[i][2]
+                avgY_2 += setPoints[i][3]
+                avgLen += goalLengths[i]
+
+            # get average of end points of crossbar to get centre
+            bottomGoalPoint = (int(avgX_1 / len(setPoints)), int(avgY_1 / len(setPoints)))
+            topGoalPoint = (int(avgX_2 / len(setPoints)), int(avgY_2 / len(setPoints)))
+
+            centreX = (topGoalPoint[0] + bottomGoalPoint[0]) // 2
+            centreY = (topGoalPoint[1] + bottomGoalPoint[1]) // 2
+
+            setPoint = (centreX, centreY)
+            goalPostLength = avgLen / len(goalLengths)
+            cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
+            return setPoint, goalPostLength
+
+# Takes in array of points, dest 4D array, setPoint and goalPostLength
+# calcs both distance from each point to setPoint and which 'octant'
+# the point is taking the setPoint as the origin and adds to new array
+def calc_dist_orient(AveragePoints, averagePointsDistance, setPoint, goalPostLength):
+        # Iterate over each point in AveragePoints and calculate the distance
+        for l in AveragePoints:
+            # Calculate the distance from setPoint
+            dist = math.dist(setPoint, l)
+            relDist = dist // (goalPostLength / 2)
+            
+            # calculate angle between two points taking setpoint as origin
+            # equalise points compared to set point
+            tempY = l[1] - setPoint[1]
+            tempX = l[0] - setPoint[0]
+            
+            rads = math.atan2(tempY, tempX) / math.pi
+            degrees = math.degrees(math.atan2(tempY, tempX))
+            if degrees < 0:
+                degrees += 360
+
+            octant = 8 - ( degrees // 45 )
+
+            # Concatenate the original point with the distance to form a new array with three elements
+            new_point = np.concatenate((l, [relDist, octant]))
+            
+            # Append the new point to the list
+            averagePointsDistance.append(new_point)
+        return averagePointsDistance
 #MAIN
 while(videoCapture.isOpened()):
     ret, frame = videoCapture.read()
@@ -464,8 +538,6 @@ while(videoCapture.isOpened()):
     AveragePoints = average_strong_corners(CornerPoints)
         
 
-
-    
     #Print lines
     if LineFiltered:
         #print(LineFiltered)
@@ -473,37 +545,12 @@ while(videoCapture.isOpened()):
             l = LineFiltered[i]
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
-    setPoint = [0, 0]
-    #draw marker on goal post set point
-    if LineGoal:
-        LineGoal.sort(key=itemgetter(1))
-        setPoint = [LineGoal[0][0], LineGoal[0][1]]
-        cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
+    # get stable point from pitch, center of crossbar, and length of crossbar
+    setPoint, goalPostLength = get_goal_reference(LineGoal)
 
-    # Create an empty list to hold the 3D points (original 2D point + distance)
+    # create an empty list to hold the 4D points (original 2D point + distance + octant)
     averagePointsDistance = []
-    # Iterate over each point in AveragePoints and calculate the distance
-    for l in AveragePoints:
-        # Calculate the distance from setPoint
-        dist = math.dist(setPoint, l)
-        
-        # calculate angle between two points taking setpoint as origin
-        # equalise points compared to set point
-        tempY = l[1] - setPoint[1]
-        tempX = l[0] - setPoint[0]
-        
-        rads = math.atan2(tempY, tempX) / math.pi
-        degrees = math.degrees(math.atan2(tempY, tempX))
-        if degrees < 0:
-            degrees += 360
-
-        octants = 8 - (degrees // 45)
-
-        # Concatenate the original point with the distance to form a new array with three elements
-        new_point = np.concatenate((l, [dist, octants]))
-        
-        # Append the new point to the list
-        averagePointsDistance.append(new_point)
+    calc_dist_orient(AveragePoints, averagePointsDistance, setPoint, goalPostLength)
 
     # sort based on distance from set point
     averagePointsDistance.sort(key=itemgetter(3))
