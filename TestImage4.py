@@ -419,20 +419,29 @@ while(videoCapture.isOpened()):
 
     # Create an empty list to hold the 3D points (original 2D point + distance)
     averagePointsDistance = []
-
     # Iterate over each point in AveragePoints and calculate the distance
     for l in AveragePoints:
         # Calculate the distance from setPoint
         dist = math.dist(setPoint, l)
         
+        # calculate angle between two points taking setpoint as origin
+        # equalise points compared to set point
+        tempY = l[1] - setPoint[1]
+        tempX = l[0] - setPoint[0]
+        
+        rads = math.atan2(tempY, tempX) / math.pi
+        degrees = math.degrees(math.atan2(tempY, tempX))
+        if degrees < 0:
+            degrees += 360
+
         # Concatenate the original point with the distance to form a new array with three elements
-        new_point = np.concatenate((l, [dist]))
+        new_point = np.concatenate((l, [dist, degrees]))
         
         # Append the new point to the list
         averagePointsDistance.append(new_point)
 
     # sort based on distance from set point
-    averagePointsDistance.sort(key=itemgetter(2))
+    averagePointsDistance.sort(key=itemgetter(3))
     print(averagePointsDistance)
 
     mark_pts(OrigImage, averagePointsDistance)
