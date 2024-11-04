@@ -87,13 +87,169 @@ def find_and_draw_parallel_perpendicular(image, lines, longest_line):
 
     return combined_image
 
+def getMaxLines(edges):
 
+        # Step 3: Morphological operations (JANNAT) customised
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
+        dilated_edges = cv.dilate(edges, kernel, iterations=1)
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, (6, 6))
+        eroded_edges = cv.erode(dilated_edges, kernel, iterations=1)
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, (2, 2))
+        eroded_edges = cv.dilate(eroded_edges, kernel, iterations=1)
+
+        # Step 4: Detect lines using Hough Line Transform (JANNAT)
+        lines = detect_hough_lines(eroded_edges)
+        hough_image = TestImage.copy()
+
+        if lines.all():
+            for i in range(0, len(lines)):
+                l = lines[i][0]
+                cv.line(hough_image, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
+
+        #Values for filtering and grouping
+        minLength = 10
+        minRes = 1
+        maxAngleDifference = 5
+        maxDistanceDifference = 15
+
+        #Filtering and grouping lines
+        skipIndex = []
+        LinesSorted = []
+        if lines is not None:
+
+            #Load first line
+            for i, line1 in enumerate(lines):
+                skipLoop = False
+                line1 = line1[0]
+                v1 = line1[2:4] - line1[0:2]
+                len1 = np.linalg.norm(v1)
+            
+                for s in range(0, len(skipIndex)):
+                    skip = skipIndex[s]
+                    if skip == i:
+                        skipLoop = True
+                        break
+                
+                #Skip it its too short or if it has allready been appended      
+                if len1 < minRes * minLength or skipLoop == True:
+                    continue
+                
+                #Load second line
+                LinesSimmilar = []
+                LinesSimmilar.append(line1)
+                for j, line2 in enumerate(lines):
+                    skipLoop = False
+                    line2 = line2[0]
+                    if i == j:
+                        continue
+                    v2 = line2[2:4] - line2[0:2]
+                    len2 = np.linalg.norm(v2)
+
+                    for s in range(0, len(skipIndex)):
+                        skip = skipIndex[s]
+                        if skip == j:
+                            skipLoop = True
+                            break
+
+                    #Skip it its too short or if it has allready been appended          
+                    if len2 < minRes * minLength or skipLoop == True:
+                        continue
+                    
+                    #Skips line if its not ~parallel
+                    angleDifference = abs( calculate_line_angle(line1) - calculate_line_angle(line2) )
+                    if angleDifference > maxAngleDifference:
+                        continue
+                        
+                    #Get line points (laid it out for personaly clarity)
+                    x1 = line1[0]
+                    y1 = line1[1]
+                    x2 = line1[2]
+                    y2 = line1[3]
+                    x3 = line2[0]
+                    y3 = line2[1]
+                    x4 = line2[2]
+                    y4 = line2[3]
+
+                    #Gives line as Ax+By=C format
+                    def line(p1, p2):
+                        A = (p1[1] - p2[1])
+                        B = (p2[0] - p1[0])
+                        C = (p1[0]*p2[1] - p2[0]*p1[1])
+                        return A, B, -C
+
+                    #Get first line as Ax+By=C format
+                    L1 = line([x1, y1], [x2, y2])
+
+                    #Gives y of an Ax+By=C line by inputting x
+                    def getY(line, x):
+                        y = ((line[2])-(line[0]*x))/line[1]
+                        return y
+
+                    #Input both x coords of second line. Checks if y of the extended first line meets the y of the second line
+                    if abs(getY(L1, x3) - y3) > maxDistanceDifference and abs(getY(L1, x4) - y4) > maxDistanceDifference:
+                        continue
+                    
+                    #If on same line, group together
+                    skipIndex.append(j)
+                    LinesSimmilar.append(line2)
+
+                #Append each group in an array of groups
+                LinesSorted.append(LinesSimmilar)
+
+
+
+        #Go through all line groups, get min and max point (Line that spans all lines) and append
+        LineFiltered = []
+        for i in range(0, len(LinesSorted)):
+            sorted = LinesSorted[i]
+
+            #Initialise variables
+            lineOut = sorted[0]
+            minX1 = sorted[0][0] 
+            minY1 = sorted[0][1] 
+            maxX2 = sorted[0][2] 
+            maxY2 = sorted[0][3] 
+
+            #Gather min and max for the line group
+            for j in range(0, len(sorted)):
+                #print(line)
+                line = sorted[j]
+                #print(calculate_line_angle(line))
+                if calculate_line_angle(line) >= 0:
+                    if min(line[0], line[2]) < minX1:
+                        minX1 = min(line[0], line[2])
+                    if max(line[0], line[2]) > maxX2:
+                        maxX2 = max(line[0], line[2])
+                    if min(line[1], line[3]) < minY1:
+                        minY1 = min(line[1], line[3])
+                    if max(line[1], line[3]) > maxY2:
+                        maxY2 = max(line[1], line[3])
+                
+                if calculate_line_angle(line) < 0:
+                    if min(line[0], line[2]) < minX1:
+                        minX1 = min(line[0], line[2])
+                    if max(line[0], line[2]) > maxX2:
+                        maxX2 = max(line[0], line[2])
+                    if min(line[1], line[3]) < maxY2:
+                        maxY2 = min(line[1], line[3])
+                    if max(line[1], line[3]) > minY1:
+                        minY1 = max(line[1], line[3])
+
+            #Fill values and append
+            lineOut[0] = minX1 
+            lineOut[1] = minY1
+            lineOut[2] = maxX2
+            lineOut[3] = maxY2
+            LineFiltered.append(lineOut)
+
+        return LineFiltered
 
 while(videoCapture.isOpened()):
     ret, frame = videoCapture.read()
 
     if ret == True:
         TestImage = frame.copy()
+        TestImageGoal = np.copy(TestImage)
         OrigImage = np.copy(TestImage)
 
     else: 
@@ -103,8 +259,8 @@ while(videoCapture.isOpened()):
     upper_bound = np.array([255, 255, 255], dtype=np.uint8)
 
     # Create a mask where pixels within the range are white, others are black
-    TestImage = cv.inRange(TestImage, lower_bound, upper_bound)
-    TestImage = cv.cvtColor(TestImage, cv.COLOR_GRAY2BGR)
+    TestImageGoal = cv.inRange(TestImageGoal, lower_bound, upper_bound)
+    TestImageGoal = cv.cvtColor(TestImageGoal, cv.COLOR_GRAY2BGR)
     
     #Contrast and brightness mask for input frame
     '''
@@ -124,180 +280,28 @@ while(videoCapture.isOpened()):
     TestImage = cv.cvtColor(imghsv.astype("uint8"), cv.COLOR_HSV2BGR)
     '''
     
-    # Step 1: Apply green color segmentation (JANNAT)
-    #segmented_image = color_segmentation_green(TestImage)
+    #Step 1: Apply green color segmentation (JANNAT)
+    segmented_image = color_segmentation_green(TestImage)
 
     #TEST masking out the outside area
-    # kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (6, 3))
-    # TestMask = cv.erode(segmented_image, kernel, iterations=15)
-    # TestMask = cv.cvtColor(TestMask, cv.COLOR_BGR2GRAY)
-    # empty, TestMask = cv.threshold(TestMask, 0, 255, cv.THRESH_BINARY)
-    # TestMask = cv.dilate(TestMask, kernel, iterations=30)
-    # TestMask = cv.cvtColor(TestMask, cv.COLOR_GRAY2BGR)
-    # segmented_image = cv.bitwise_and(segmented_image, TestMask)
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (6, 3))
+    TestMask = cv.erode(segmented_image, kernel, iterations=15)
+    TestMask = cv.cvtColor(TestMask, cv.COLOR_BGR2GRAY)
+    empty, TestMask = cv.threshold(TestMask, 0, 255, cv.THRESH_BINARY)
+    TestMask = cv.dilate(TestMask, kernel, iterations=30)
+    TestMask = cv.cvtColor(TestMask, cv.COLOR_GRAY2BGR)
+    segmented_image = cv.bitwise_and(segmented_image, TestMask)
 
     # Step 2: Detect edges using Canny edge detection (JANNAT)
-    edges, gray_image = detect_edges(TestImage)
+    # goal post/set point stuff
+    edges, gray_image = detect_edges(TestImageGoal)
+    LineGoal = getMaxLines(edges)
 
-    # Step 3: Morphological operations (JANNAT) customised
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
-    dilated_edges = cv.dilate(edges, kernel, iterations=1)
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (6, 6))
-    eroded_edges = cv.erode(dilated_edges, kernel, iterations=1)
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (2, 2))
-    eroded_edges = cv.dilate(eroded_edges, kernel, iterations=1)
-
-    # Step 4: Detect lines using Hough Line Transform (JANNAT)
-    lines = detect_hough_lines(eroded_edges)
-    hough_image = TestImage.copy()
-
-    if lines is not None:
-        for i in range(0, len(lines)):
-            l = lines[i][0]
-            cv.line(hough_image, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
-
-    #Values for filtering and grouping
-    minLength = 10
-    minRes = 1
-    maxAngleDifference = 5
-    maxDistanceDifference = 15
-
-    #Filtering and grouping lines
-    skipIndex = []
-    LinesSorted = []
-    if lines is not None:
-
-        #Load first line
-        for i, line1 in enumerate(lines):
-            skipLoop = False
-            line1 = line1[0]
-            v1 = line1[2:4] - line1[0:2]
-            len1 = np.linalg.norm(v1)
-        
-            for s in range(0, len(skipIndex)):
-                skip = skipIndex[s]
-                if skip == i:
-                    skipLoop = True
-                    break
-            
-            #Skip it its too short or if it has allready been appended      
-            if len1 < minRes * minLength or skipLoop == True:
-                continue
-            
-            #Load second line
-            LinesSimmilar = []
-            LinesSimmilar.append(line1)
-            for j, line2 in enumerate(lines):
-                skipLoop = False
-                line2 = line2[0]
-                if i == j:
-                    continue
-                v2 = line2[2:4] - line2[0:2]
-                len2 = np.linalg.norm(v2)
-
-                for s in range(0, len(skipIndex)):
-                    skip = skipIndex[s]
-                    if skip == j:
-                        skipLoop = True
-                        break
-
-                #Skip it its too short or if it has allready been appended          
-                if len2 < minRes * minLength or skipLoop == True:
-                    continue
-                
-                #Skips line if its not ~parallel
-                angleDifference = abs( calculate_line_angle(line1) - calculate_line_angle(line2) )
-                if angleDifference > maxAngleDifference:
-                    continue
-                    
-                #Get line points (laid it out for personaly clarity)
-                x1 = line1[0]
-                y1 = line1[1]
-                x2 = line1[2]
-                y2 = line1[3]
-                x3 = line2[0]
-                y3 = line2[1]
-                x4 = line2[2]
-                y4 = line2[3]
-
-                #Gives line as Ax+By=C format
-                def line(p1, p2):
-                    A = (p1[1] - p2[1])
-                    B = (p2[0] - p1[0])
-                    C = (p1[0]*p2[1] - p2[0]*p1[1])
-                    return A, B, -C
-
-                #Get first line as Ax+By=C format
-                L1 = line([x1, y1], [x2, y2])
-
-                #Gives y of an Ax+By=C line by inputting x
-                def getY(line, x):
-                    y = ((line[2])-(line[0]*x))/line[1]
-                    return y
-
-                #Input both x coords of second line. Checks if y of the extended first line meets the y of the second line
-                if abs(getY(L1, x3) - y3) > maxDistanceDifference and abs(getY(L1, x4) - y4) > maxDistanceDifference:
-                    continue
-                
-                #If on same line, group together
-                skipIndex.append(j)
-                LinesSimmilar.append(line2)
-
-            #Append each group in an array of groups
-            LinesSorted.append(LinesSimmilar)
-
-
-
-    #Go through all line groups, get min and max point (Line that spans all lines) and append
-    LineFiltered = []
-    for i in range(0, len(LinesSorted)):
-        sorted = LinesSorted[i]
-
-        #Initialise variables
-        lineOut = sorted[0]
-        minX1 = sorted[0][0] 
-        minY1 = sorted[0][1] 
-        maxX2 = sorted[0][2] 
-        maxY2 = sorted[0][3] 
-
-        #Gather min and max for the line group
-        for j in range(0, len(sorted)):
-            #print(line)
-            line = sorted[j]
-            #print(calculate_line_angle(line))
-            if calculate_line_angle(line) >= 0:
-                if min(line[0], line[2]) < minX1:
-                    minX1 = min(line[0], line[2])
-                if max(line[0], line[2]) > maxX2:
-                    maxX2 = max(line[0], line[2])
-                if min(line[1], line[3]) < minY1:
-                    minY1 = min(line[1], line[3])
-                if max(line[1], line[3]) > maxY2:
-                    maxY2 = max(line[1], line[3])
-            
-            if calculate_line_angle(line) < 0:
-                if min(line[0], line[2]) < minX1:
-                    minX1 = min(line[0], line[2])
-                if max(line[0], line[2]) > maxX2:
-                    maxX2 = max(line[0], line[2])
-                if min(line[1], line[3]) < maxY2:
-                    maxY2 = min(line[1], line[3])
-                if max(line[1], line[3]) > minY1:
-                    minY1 = max(line[1], line[3])
-
-        #Fill values and append
-        lineOut[0] = minX1 
-        lineOut[1] = minY1
-        lineOut[2] = maxX2
-        lineOut[3] = maxY2
-        LineFiltered.append(lineOut)
-
-
+    edges, gray_image = detect_edges(segmented_image)
+    LineFiltered = getMaxLines(edges)
 
     #Place for mask filter, no longer in use
     MaskFiltered = LineFiltered
-
-
 
     #Get intersection points. Extend lines by 75px and check if they intersect within bounds
     lineExtension = 75
@@ -398,17 +402,16 @@ while(videoCapture.isOpened()):
 
     
     #Print lines
-    if LineFiltered is not None:
+    if LineFiltered:
         #print(LineFiltered)
         for i in range(0, len(LineFiltered)):
             l = LineFiltered[i]
             cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
     #draw marker on goal post set point
-    if LineFiltered:
-        LineFiltered.sort(key=itemgetter(1))
-        print(LineFiltered)
-        cv.drawMarker(OrigImage, (LineFiltered[0][0], LineFiltered[0][1]), (255, 50, 0), cv.MARKER_CROSS, 30, 3)
+    if LineGoal:
+        LineGoal.sort(key=itemgetter(1))
+        cv.drawMarker(OrigImage, (LineGoal[0][0], LineGoal[0][1]), (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
 
     AveragePoints.sort(key=itemgetter(0))
 
