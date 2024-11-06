@@ -6,15 +6,33 @@ from operator import itemgetter
 #import sys
 
 
+REF_PT_MAP = {
+    (6, 1) : [100, 50], 
+    (4, 8) : [100, 210],
+    (2, 8) : [100, 285],
+    (3, 8) : [140, 285],
+    (1, 6) : [140, 415],
+    (2, 5) : [100, 415],
+    (2, 7) : [220, 492]
+}
 
+obj_pts = [
+    [100, 285],             # GL0
+    [140, 285],             # GL1
+    [140, 415],             # GL2
+    [100, 415],             # GL3
+]
 
+## --> UNUSED
 MIN_MATCH_COUNT = 10
 color = np.random.randint(0, 255, (500, 3))
+## --> Keeping track of where the points pts have been for 5 iters
 PreviousPoints = []
 PreviousPoints2 = []
 PreviousPoints3 = []
 PreviousPoints4 = []
 
+## --> Labeling references
 setPoints = []
 setPoint = [0, 0, 0, 0]
 setPoints.append(setPoint)
@@ -24,9 +42,12 @@ goalPostLength = 1
 goalLengths.append(goalPostLength)
 
 #CHECK PATH!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!CHECK PATH
-videoCapture = cv.VideoCapture('InputVideoCOMP.mp4')
+#videoCapture = cv.VideoCapture('InputVideoCOMP.mp4')
+videoCapture = cv.VideoCapture('IPCVProjectInputCOMPRESSED.mp4')
 if (videoCapture.isOpened()== False):
     print("Error opening video file")
+
+reference_pitch_img = cv.imread("./field_map.jpeg")
 
 '''
 #Making the video capturer
@@ -126,7 +147,7 @@ def find_and_draw_parallel_perpendicular(image, lines, longest_line):
     return combined_image
 
 def getMaxLines(edges):
-
+        ## Joining close lines into one
         # Step 3: Morphological operations (JANNAT) customised
         kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
         dilated_edges = cv.dilate(edges, kernel, iterations=1)
@@ -143,7 +164,10 @@ def getMaxLines(edges):
             if lines.all():
                 for i in range(0, len(lines)):
                     l = lines[i][0]
-                    cv.line(hough_image, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
+                    # print(f"Drawing line...{l[0]},{l[1]} --> {l[2]}, {l[3]}")
+                    cv.line(hough_image, (l[0], l[1]), (l[2], l[3]), [0, 255, 0], 10, cv.LINE_4)
+        
+        #cv.imshow("Hough lines", rescale_frame(hough_image))
 
         #Values for filtering and grouping
         minLength = 10
@@ -354,7 +378,6 @@ def get_intersection_points(LineFiltered):
 def average_strong_corners(CornerPoints):
     differenceXYmax = 50
     AveragePoints = []
-
     #Make sure to use global variables
     global PreviousPoints
     global PreviousPoints2
@@ -464,9 +487,9 @@ def get_goal_reference(LineGoal):
 
             setPoint = (centreX, centreY)
             goalPostLength = avgLen / len(goalLengths)
-            cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
+            #cv.drawMarker(OrigImage, setPoint, (0, 50, 255), cv.MARKER_SQUARE, 30, 3)
             return setPoint, goalPostLength
-
+        return (0, 0), 1
 # Takes in array of points, dest 4D array, setPoint and goalPostLength
 # calcs both distance from each point to setPoint and which 'octant'
 # the point is taking the setPoint as the origin and adds to new array
@@ -495,6 +518,309 @@ def calc_dist_orient(AveragePoints, averagePointsDistance, setPoint, goalPostLen
             # Append the new point to the list
             averagePointsDistance.append(new_point)
         return averagePointsDistance
+
+
+
+# # Annotates points with index in an image
+# def mark_pts(im, pts, marker_color = (255, 50, 0), text_color = (0, 50, 255), marker_type = cv.MARKER_CROSS, text_sz = 2, marker_sz = 30):
+#     for i, p in enumerate(pts):
+#         cv.drawMarker(im, (int(p[0]), int(p[1])), marker_color, marker_type, marker_sz, 3)
+#         cv.putText(im, str(int(p[3])), (int(p[0]), int(p[1] - 10)), cv.FONT_HERSHEY_COMPLEX, text_sz, text_color, 2)
+#     return im
+
+def overlay_warped_image(destination_image, warped_image, target_point):
+    h, w, _ = destination_image.shape
+    warped_image = cv.resize(warped_image, (w, h))
+
+    # Create a mask of the non-black regions of the warped image
+    mask = cv.cvtColor(warped_image, cv.COLOR_BGR2GRAY)
+    _, mask = cv.threshold(mask, 1, 255, cv.THRESH_BINARY)
+
+    # Find the centroid of the non-black region
+    moments = cv.moments(mask)
+    if moments['m00'] != 0:
+        centroid_x = int(moments['m10'] / moments['m00'])
+        centroid_y = int(moments['m01'] / moments['m00'])
+    else:
+        return destination_image
+
+    # Calculate the translation needed to move the centroid to the target point
+    translation_x = target_point[0] - centroid_x
+    translation_y = target_point[1] - centroid_y
+
+    # Create the translation matrix
+    translation_matrix = np.float32([[1, 0, translation_x], [0, 1, translation_y]])
+
+    # Apply the translation to the warped image and the mask
+    warped_image_translated = cv.warpAffine(warped_image, translation_matrix, (w, h))
+    mask_translated = cv.warpAffine(mask, translation_matrix, (w, h))
+
+    # Create an inverted mask for the destination image
+    mask_inv = cv.bitwise_not(mask_translated)
+
+    # Isolate the background from the destination image
+    background = cv.bitwise_and(destination_image, destination_image, mask=mask_inv)
+
+    # Isolate the non-black regions from the translated warped image
+    foreground = cv.bitwise_and(warped_image_translated, warped_image_translated, mask=mask_translated)
+
+    # Combine the background and the foreground
+    combined_image = cv.add(background, foreground)
+
+    return combined_image
+
+# scales down a frame to a target percentage quality
+def rescale_frame(frame_input, percent=75):    
+    width = int(frame_input.shape[1] * percent / 100)    
+    height = int(frame_input.shape[0] * percent / 100)    
+    dim = (width, height)    
+    return cv.resize(frame_input, dim, interpolation=cv.INTER_AREA)
+    
+# gets a midpoint and constructs the 4 corners that the advert image should be placed in.
+def get_advert_coords_from_midpt(ad_im, midpt):
+    axh = ad_im.shape[0] // 2
+    ayh = ad_im.shape[1] // 2
+    return np.array([
+        [midpt[0] - axh, midpt[1] - ayh],
+        [midpt[0] + axh, midpt[1] - ayh],
+        [midpt[0] + axh, midpt[1] + ayh],
+        [midpt[0] - axh, midpt[1] + ayh],
+    ])
+
+# Performs perspective transformation of a set of points with a homography matrix.
+def perspective_tx_cv(pts, h):
+    pts_reshaped = np.float32(pts)[:, np.newaxis, :]
+    return cv.perspectiveTransform(pts_reshaped, h).squeeze(1)
+
+# Fits a source image within a destination image at specified anchor points that may be perspectively transformed.
+def fit_image_in_anchor_pts(source_image, destination_image, anchor_pts):
+    src_height, src_width = source_image.shape[:2]
+    src_points = np.float32([[0, 0], [src_width, 0], [src_width, src_height], [0, src_height]])
+    dst_points = np.float32([anchor_pts[3], anchor_pts[0], anchor_pts[1], anchor_pts[2]])
+
+    homography_matrix = cv.getPerspectiveTransform(src_points, dst_points)
+    warped_image = cv.warpPerspective(source_image, homography_matrix, (destination_image.shape[1], destination_image.shape[0]))
+
+    mask = np.zeros_like(destination_image, dtype=np.uint8)
+    cv.fillConvexPoly(mask, dst_points.astype(int), (255, 255, 255))
+
+    mask_inv = cv.bitwise_not(mask)
+    destination_bg = cv.bitwise_and(destination_image, mask_inv)
+    warped_fg = cv.bitwise_and(warped_image, mask)
+    result = cv.add(destination_bg, warped_fg)
+    return result
+
+
+def rotate_image_with_homography(image, line, angle, homography_matrix):
+    import cv2
+    # Convert the angle from degrees to radians
+    angle_rad = np.deg2rad(angle)
+
+    # Image dimensions
+    h, w = image.shape[:2]
+
+    # Apply the existing homography matrix to the image
+    warped_image = cv2.warpPerspective(image, homography_matrix, (w, h))
+
+    # Line endpoints
+    x1, y1 = line[0]
+    x2, y2 = line[1]
+
+    # Calculate the center of the line (point of rotation)
+    line_center = ((x1 + x2) // 2, (y1 + y2) // 2)
+
+    # Calculate the translation matrix to move the center of the line to the origin
+    tx = -line_center[0]
+    ty = -line_center[1]
+    translation_to_origin = np.array([
+        [1, 0, tx],
+        [0, 1, ty],
+        [0, 0, 1]
+    ], dtype=np.float32)
+
+    # Construct the 3D rotation matrix
+    cos_alpha = np.cos(angle_rad)
+    sin_alpha = np.sin(angle_rad)
+    rotation_3d = np.array([
+        [1, 0, 0],
+        [0, cos_alpha, -sin_alpha],
+        [0, sin_alpha, cos_alpha]
+    ], dtype=np.float32)
+
+    # Extend the 3D rotation matrix to 3x3 homography form (perspective)
+    rotation_homography = np.eye(3, dtype=np.float32)
+    rotation_homography[:2, :2] = rotation_3d[:2, :2]
+
+    # Combine with translation matrices
+    translation_back = np.array([
+        [1, 0, -tx],
+        [0, 1, -ty],
+        [0, 0, 1]
+    ], dtype=np.float32)
+
+    # Compute the final combined homography
+    combined_homography = translation_back @ rotation_homography @ translation_to_origin
+
+    # Apply the combined homography on the already warped image
+    rotated_image = cv2.warpPerspective(warped_image, combined_homography, (w, h), flags=cv2.INTER_LINEAR)
+
+    return rotated_image
+
+
+# Computes a homography matrix based on the birds eye view reference of the pitch, 
+# transforms an advertisement image path passed as an arg to the pitch using homography and anchors it around a midpoint.
+# Rotation, translation and scale of the advert is taken care of by the homography based warping.
+def insert_advert(ad_img_path:str, scene_im, obj_pts, scene_pts, anchor_mid_point:tuple, scaling_factor:int = 20):
+    ad_im = cv.imread(ad_img_path)
+    ad_im = cv.rotate(ad_im, cv.ROTATE_90_COUNTERCLOCKWISE)
+    # reduce the advert image size to fit within image bounds.
+    ad_im = rescale_frame(ad_im, scaling_factor)
+    if(len(obj_pts) < 4):
+        print("Too low correspondences to use homography")
+        return scene_im, ret
+    # actual computation of homography
+    obj_pts = np.array(obj_pts)
+    scene_pts = np.array(scene_pts)
+    print("Object points : ")
+    print(obj_pts)
+    print("Scene points : ")
+    print(scene_pts)
+    h, status = cv.findHomography(np.array(obj_pts), np.array(scene_pts), cv.RANSAC)
+    ad_im_sz = (scene_im.shape[1], scene_im.shape[0])
+    ad_im_warped = cv.warpPerspective(ad_im, h, ad_im_sz)
+    combined_image = overlay_warped_image(scene_im, ad_im_warped, anchor_mid_point)
+    cv.imshow("Scene ad pts", combined_image)
+    # Add the image within the transformed anchor points
+    return combined_image, True
+    
+def between(cap, lower: int, upper: int) -> bool:
+    return lower <= int(cap.get(cv.CAP_PROP_POS_MSEC)) < upper
+
+
+def get_dominant_line_angles(lineset):
+    import math
+    resolution = 1
+    count_map = {}
+
+    for l in lineset:
+        point1 = [l[0], l[1]]
+        point2 = [l[2], l[3]]
+        angle_radians = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
+        angle_degrees = math.degrees(angle_radians)
+        angle_nearest = round(angle_degrees / resolution) * resolution
+        if angle_nearest not in count_map:
+            count_map[angle_nearest] = 0
+        count_map[angle_nearest]+=1
+    return count_map
+
+def bucket_lines(lineset):
+    import math
+    resolution = 5
+    count_map = {}
+
+    def get_line_ang(l):
+        point1 = [l[0], l[1]]
+        point2 = [l[2], l[3]]
+        angle_radians = math.atan2(point2[1] - point1[1], point2[0] - point1[0])
+        angle_degrees = math.degrees(angle_radians)
+        return angle_degrees
+
+    for l in lineset:
+        angle_degrees = get_line_ang(l)
+        angle_nearest = round(angle_degrees / resolution) * resolution
+        if angle_nearest not in count_map:
+            count_map[angle_nearest] = 0
+        count_map[angle_nearest]+=1
+    sorted_angles = sorted(count_map.items(), key=lambda x: x[1], reverse=True)
+    most_dominant_directions = [item[0] for item in sorted_angles[:2]]
+    most_dominant_directions = sorted(most_dominant_directions)
+    print(most_dominant_directions)
+
+    bucket1 = []
+    bucket2 = []
+    for l in lineset:
+        angle_degrees = get_line_ang(l)
+        d1 = abs(angle_degrees - most_dominant_directions[0])
+        d2 = abs(angle_degrees - most_dominant_directions[1])
+        if d1 > d2:
+            bucket1.append(l)
+        else:
+            bucket2.append(l)
+    return bucket1, bucket2
+
+
+def line_to_axis_distance(lines, axis='x'):
+    # Calculate distances and pair each line with its corresponding distance
+    line_distances = []
+    for line in lines:
+        x1, y1, x2, y2 = line
+        if axis == 'x':
+            # Minimum distance between the line segment's points and the X-axis (y=0)
+            distance = min(abs(y1), abs(y2))
+        elif axis == 'y':
+            # Minimum distance between the line segment's points and the Y-axis (x=0)
+            distance = min(abs(x1), abs(x2))
+        else:
+            raise ValueError("Invalid axis value. Choose 'x' for X-axis or 'y' for Y-axis.")
+        line_distances.append((line, distance))
+    # Sort the list of tuples by the distance
+    sorted_lines = sorted(line_distances, key=lambda x: x[1])
+    # Extract only the sorted lines (without distances)
+    sorted_lines_only = [line[0] for line in sorted_lines]
+    return sorted_lines_only
+
+def filter_lines_by_length(lines, min_length):
+    filtered_lines = []
+    for line in lines:
+        x1, y1, x2, y2 = line
+        length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        if length >= min_length:
+            filtered_lines.append(line)
+    return filtered_lines
+
+def label_goal_lines(lines_x:list, goal_pt):
+    dist_map = {}
+    for line in lines_x:
+        x1, y1, x2, y2 = line
+        g_length = np.sqrt((goal_pt[0] - x1) ** 2 + (goal_pt[1] - y1) ** 2)
+        dist_map[(x1, y1, x2, y2)] = g_length
+    dset = sorted(dist_map.items(), key=lambda x: x[1])
+    sorted_lines_only = [line[0] for line in dset]
+    shortest_2_lines = sorted_lines_only[:2]
+    lines_sorted = line_to_axis_distance(shortest_2_lines, "x")
+    print("Goal lines : ")
+    return lines_sorted[0], lines_sorted[1]
+
+def label_goal_lines_x(lines_x:list):
+    dist_map = {}
+    for line in lines_x:
+        x1, y1, x2, y2 = line
+        length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        dist_map[((x1, y1, x2, y2))] = length
+    dset = sorted(dist_map.items(), key=lambda x: x[1])
+    sorted_lines_only = [line[0] for line in dset]
+    shortest_2_lines = sorted_lines_only[:2]
+    lines_sorted = line_to_axis_distance(shortest_2_lines, "x")
+    glx0, glx1 = lines_sorted
+    glx0_valid = False
+    glx1_valid = False 
+    for i, l in enumerate(lines_x):
+        if int(glx1[0]) == int(l[0]):
+            if i != len(lines_x) and i != 0:
+                glx1_valid = True
+        if int(glx0[0]) == int(l[0]):
+            if i != len(lines_x) and i != 0:
+                glx0_valid = True
+    if glx1_valid and glx0_valid:
+        return glx0, glx1
+    return None, None
+    
+frame_width = int(videoCapture.get(3))
+frame_height = int(videoCapture.get(4))
+fourcc = cv.VideoWriter_fourcc(*'mp4v')
+fps = int(round(videoCapture.get(5)))
+out = cv.VideoWriter("./out.mp4", fourcc, fps, (frame_width, frame_height))
+cnt = 0
 #MAIN
 while(videoCapture.isOpened()):
     ret, frame = videoCapture.read()
@@ -529,6 +855,9 @@ while(videoCapture.isOpened()):
 
     edges, gray_image = detect_edges(filtered_image)
     LineFiltered = getMaxLines(edges)
+    LineFiltered = filter_lines_by_length(LineFiltered, 100)
+
+
 
 
     #Get intersection points. Extend lines by 75px and check if they intersect within bounds
@@ -537,16 +866,57 @@ while(videoCapture.isOpened()):
     #Compare the points to the previous frame, use only the ones that were there before
     AveragePoints = average_strong_corners(CornerPoints)
         
-
+    orig_lines_canvas = OrigImage.copy()
     #Print lines
     if LineFiltered:
         #print(LineFiltered)
         for i in range(0, len(LineFiltered)):
             l = LineFiltered[i]
-            cv.line(OrigImage, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
+            cv.line(orig_lines_canvas, (l[0], l[1]), (l[2], l[3]), color[i].tolist(), 3, cv.LINE_AA)
     
     # get stable point from pitch, center of crossbar, and length of crossbar
     setPoint, goalPostLength = get_goal_reference(LineGoal)
+
+
+    #print(LineFiltered)
+    bucket1, bucket2 = bucket_lines(LineFiltered)
+    b1_sorted = line_to_axis_distance(bucket1, "x")
+    b2_sorted = line_to_axis_distance(bucket2, "y")
+    line_canvas = OrigImage.copy()
+    #gl0, gl1 = label_goal_lines_x(b1_sorted)
+    gl0, gl1 = label_goal_lines(b1_sorted, setPoint)
+    scene_pts = [
+        [gl0[0], gl0[1]],
+        [gl0[2], gl0[3]],
+        [gl1[2], gl1[3]],
+        [gl1[0], gl1[1]],
+    ]
+    ad_im, _ = insert_advert("./logo_scaled.png", line_canvas.copy(), obj_pts, scene_pts, (gl0[0], gl0[1]), 100)
+    #print("Set point : ")
+    # print(setPoint)
+    if len(setPoint) == 2:
+        cv.circle(line_canvas, setPoint, 30, (255, 0, 255), 2)
+    if gl0 !=  None and gl1 != None:
+        cv.line(line_canvas, (gl0[0], gl0[1]), (gl0[2], gl0[3]), (0, 255, 0), 3)
+        cv.line(line_canvas, (gl1[0], gl1[1]), (gl1[2], gl1[3]), (0, 255, 0), 3)
+        cv.putText(line_canvas, "GL0", (gl0[0] - 10, gl0[1]), cv.FONT_HERSHEY_COMPLEX, 2, (0, 255, 0), 2)
+        cv.putText(line_canvas, "GL1", (gl1[0] - 10, gl1[1]), cv.FONT_HERSHEY_COMPLEX, 2, (0, 255, 0), 2)
+    else:
+        print("No valid goal lines detected!")
+    for i, l in enumerate(b1_sorted):
+        cv.line(line_canvas, (l[0], l[1]), (l[2], l[3]), (255, 0, 255), 2)
+        cv.putText(line_canvas, f"{i}", (l[2] - 10, l[3]), cv.FONT_HERSHEY_COMPLEX, 2, (255, 0, 255), 2)
+    for i, l in enumerate(b2_sorted):
+        cv.line(line_canvas, (l[0], l[1]), (l[2], l[3]), (255, 0, 0), 2)
+        cv.putText(line_canvas, f"{i}", (l[0], l[1] + 10), cv.FONT_HERSHEY_COMPLEX, 2, (255, 0, 0), 2)
+    cv.imshow("Line buckets", line_canvas)
+    cv.imshow("Advert Image", ad_im)
+    if(cnt > 250):
+        out.write(ad_im)
+    if cnt % 50 == 0:
+        cv.imwrite(f"./frames/{cnt}.png", line_canvas)
+    cnt+=1
+
 
     # create an empty list to hold the 4D points (original 2D point + distance + octant)
     averagePointsDistance = []
@@ -554,8 +924,30 @@ while(videoCapture.isOpened()):
 
     # sort based on distance from set point
     averagePointsDistance.sort(key=itemgetter(3))
-    print(averagePointsDistance)
+    #print(averagePointsDistance)
 
+    scene_pt_map = {}
+    for data in averagePointsDistance:
+        scene_pt_map[(int(data[2]), int(data[3]))] = [int(data[0]), int(data[1])]
+    
+    # print("=================")
+    # common_pts = 0
+    # for k, v in scene_pt_map.items():
+    #     if k in REF_PT_MAP:
+    #         common_pts+=1
+    #     print(f"[{k[0]}, {k[1]}] --> {v[0]}, {v[1]}")
+    # print(f"Common Points : {common_pts}")
+    # print("=================")
+
+    #ad_im, status = insert_advert("./logo.png", OrigImage, scene_pt_map, REF_PT_MAP, [500, 500])
+
+    # if status == True:
+    #     cv.imwrite(f"{str(cnt)}.jpeg", ad_im)
+    # cnt += 1
+
+
+
+    #print(scene_pt_map)
     mark_pts(OrigImage, averagePointsDistance)
 
     #Print points
